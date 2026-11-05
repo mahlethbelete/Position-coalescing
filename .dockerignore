@@ -1,0 +1,13 @@
+.venv
+.git
+.pytest_cache
+__pycache__
+assignment
+notebooks
+tests
+output_test
+try_output
+*.parquet
+*.ipynb
+*.txt
+!requirements.txt
