@@ -359,3 +359,49 @@ def test_blank_title_row_is_not_collapsed_when_two_titles_share_company_and_star
     ]
     out, _, _ = run(rows)
     assert out['position_id'].nunique() == 3
+
+
+def test_company_names_that_differ_only_by_a_legal_suffix_match_when_a_start_is_missing():
+    rows = [
+        [d('2026-01-01'), 1, 'Kmart Australia Limited', None, 'Accounts Payable Clerk', None, None, None, None, 0],
+        [d('2026-02-01'), 1, 'kmart australia', None, 'accounts payable clerk', None, None, None, None, 0],
+    ]
+    out, _, _ = run(rows)
+    assert out['position_id'].nunique() == 1
+
+
+def test_company_suffix_variants_in_one_snapshot_collapse_into_one_position():
+    rows = [
+        [d('2026-01-01'), 1, 'Google', None, 'Engineer', None, None, d('2024-01-01'), None, 0],
+        [d('2026-01-01'), 1, 'Google, Inc.', None, 'Engineer', None, None, d('2024-01-01'), None, 1],
+    ]
+    out, matches, _ = run(rows)
+    assert out['position_id'].nunique() == 1
+    assert 'collapsed duplicate' in set(matches['tier'])
+
+
+def test_a_company_name_that_is_only_a_suffix_is_not_stripped():
+    rows = [
+        [d('2026-01-01'), 1, 'Inc', None, 'Chef', None, None, None, None, 0],
+        [d('2026-02-01'), 1, 'Ltd', None, 'Chef', None, None, None, None, 0],
+    ]
+    out, _, _ = run(rows)
+    assert out['position_id'].nunique() == 2
+
+
+def test_different_companies_with_a_shared_first_word_stay_separate():
+    rows = [
+        [d('2026-01-01'), 1, 'Delta Airlines Inc', None, 'Analyst', None, None, None, None, 0],
+        [d('2026-02-01'), 1, 'Delta Dental Inc', None, 'Analyst', None, None, None, None, 0],
+    ]
+    out, _, _ = run(rows)
+    assert out['position_id'].nunique() == 2
+
+
+def test_same_company_and_title_with_two_different_start_dates_stay_separate_despite_a_suffix():
+    rows = [
+        [d('2026-01-01'), 1, 'Acme Inc', None, 'Analyst', None, None, d('2015-01-01'), d('2016-01-01'), 0],
+        [d('2026-02-01'), 1, 'Acme', None, 'Analyst', None, None, d('2020-01-01'), None, 0],
+    ]
+    out, _, _ = run(rows)
+    assert out['position_id'].nunique() == 2

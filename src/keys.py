@@ -14,6 +14,19 @@ def text_key(value):
     text = re.sub(r'[^\w\s]', ' ', text)
     return ' '.join(text.split()) or None
 
+LEGAL_SUFFIXES = {'inc', 'incorporated', 'llc', 'ltd', 'limited', 'corp', 'corporation', 'plc', 'gmbh', 'llp', 'lp'}
+
+
+@lru_cache(maxsize=200_000)
+def company_key(value):
+    key = text_key(value)
+    if key is None:
+        return None
+    words = key.split()
+    while len(words) > 1 and words[-1] in LEGAL_SUFFIXES:
+        words.pop()
+    return ' '.join(words)
+
 
 def url_key(value):
     if not isinstance(value, str):

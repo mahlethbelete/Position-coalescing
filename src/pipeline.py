@@ -7,7 +7,6 @@ import resource
 import shutil
 import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 from pathlib import Path
 
@@ -181,9 +180,11 @@ def main():
         schema = split_into_buckets(files, scratch, bits)
         split_seconds = time.time() - started
         buckets = sorted(scratch.glob('bucket_*.parquet'), key=lambda p: p.stat().st_size, reverse=True)
-        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn')) as pool:
-            results = list(pool.map(process_bucket, buckets, repeat(output_dir),
-                                    repeat(output_schema(schema)), repeat(write_logs), repeat(run)))
+        out_schema = output_schema(schema)
+        context = multiprocessing.get_context('spawn')
+        with context.Pool(processes=workers, maxtasksperchild=1) as pool:
+            results = pool.starmap(process_bucket, zip(buckets, repeat(output_dir), repeat(out_schema),
+                                                        repeat(write_logs), repeat(run)))
         commit_run(output_dir, bits, run, buckets)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
