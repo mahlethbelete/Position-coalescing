@@ -1,20 +1,8 @@
-# Virtual environment
-.venv/
-venv/
-
-# Python
+*.tar
+*.tar.gz
+source_code.zip
+output_check/
+output_docker/
 __pycache__/
-*.py[cod]
 .pytest_cache/
-
-# Environment variables
-.env
-.env.*
-
-# Generated files
-*.parquet
-*.pkl
-*.log
-
-# OS
-.DS_Store
+*.pyc
