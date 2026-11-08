@@ -1,4 +1,4 @@
-# Position coalescing: my approach
+# Position coalescing
 
 ## 1. The problem and my goal
 
@@ -30,8 +30,8 @@ The matching tiers are:
 4. **Company and title:** matches when one observation is missing its start date.
 5. **Start date and similar title:** the start date matches and the title similarity is at least 0.7, or one title is a prefix of the other.
 6. **Start date and description:** both fields match, and the description is usable.
-7. **Description with a missing start date:** one side is missing its start date, with additional company, URL, or title evidence.
-8. **Description-based edit rule:** the company, title, and description match, but the start dates differ by no more than 12 months. The existing position must also have appeared in the preceding snapshot.
+7. **Matching when a start date is missing:** one side is missing its start date, with additional company, URL, or title evidence.
+8. **Matching with a start date change:** The company, title, and description match, and the start dates are within 12 months of each other. The existing position must also have appeared in the previous snapshot.
 9. **Title-only row:** a row without a company or start date can only match an existing position that has no known company.
 10. **Company or URL-only row:** a row with only a company or company URL, and no title or start date, can match only when exactly one known position exists at that company or URL.
 
@@ -39,29 +39,29 @@ Stronger evidence gets priority, and weaker evidence cannot override a stronger 
 
 ### Important matching decisions
 
-**Missing fields are never treated as evidence for matching.** A blank start date does not count as the same start date. Missing information is handled through explicit tiers rather than treating blanks as matching values.
+**Missing fields are never treated as evidence for matching.** For example, two blank start dates are not considered a match. The rules need other information to decide that two records belong to the same position.
 
-**Descriptions only count as evidence once they are at least 40 characters long.** Short or generic descriptions cannot reliably identify one specific job. For example, "Intern" could apply to many different positions.
+**Descriptions need to be at least 40 characters long to count as evidence.** Short or generic descriptions cannot reliably be used to identify a specific job. For example, "Intern" could describe many different positions. I chose 40 characters as a practical starting point to filter out short or generic descriptions. I haven't tested different thresholds against labeled data, so I can't say whether 40 is the best cutoff.
 
-**Two different known start dates normally do not merge.** This is backed by a direct check, 2,703 groups shared the same company and title but had different start dates, a sample of 3 were read and all were really separate positions, not the same job. 
+**Different start dates usually mean different positions.** I checked 2,703 groups that share the same company and title but had different start dates. I reviewed a sample of three, and all three were separate positions. This is not a proof that different start dates always mean different jobs. I used it as supporting evidence.
+
 Tier 8 is the exception. It allows a match when:
+
 - The company, title, and usable description are the same.
 - The start dates differ by no more than 12 months.
-- The existing position appeared in the preceding snapshot.
+- The existing position appeared in the previous snapshot.
 
-This is intended to handle a possible date correction or edit rather than treating every different date as a new job.
+This is intentional so that it can handle a possible date correction or edit without creating a new position every time the date changes.
 
-**Ambiguous matches are handled conservatively.** When a new row matches multiple existing positions, the system avoids guessing and creates a new position. If several candidates have the same newest company, title, and start date, the oldest created position wins as a deterministic tie-breaker.
+**When there are multiple possible matches, the system avoids guessing.** When a new row matches more than one existing position, it creates a new position. There is one fallback. If the candidates have the same newest company, title, and start date, it chooses the oldest position.
 
-I prioritized avoiding incorrect merges over forcing a match when the available evidence is ambiguous.
+I chose to leave uncertain matches separate rather than risk merging two different jobs.
 
 ## 3. Hard cases and judgment calls
 
 Some situations are difficult because different real-world jobs can have very similar information.
 
-### The same company appears more than once
-
-Why Tier 2 and Tier 3 allow different titles
+### Why Tier 2 and Tier 3 allow different titles
 
 Tier 2 and Tier 3 help identify positions whose titles change over time. Titles stayed the same 96.8 percent of the time across matched jobs. Of the 8,709 that did change, 44.5 percent were identical after cleanup, text noise only, 49.9 percent were genuinely different wording.
 Someone might initially list their role as “Software Intern” and later update it to “Software Engineer Intern”. Requiring an exact title match might create duplicate positions instead of identifying the update.
@@ -70,15 +70,9 @@ The LinkedIn URL is missing in 44.5% of the rows, so it cannot always be relied 
 
 A URL alone could merge different jobs that one person held at the same company. This is why Tier 3 also requires the start date.
 
-Allowing different titles introduces some risk. 20.9 percent of jobs sit at a company where the same person holds 2 or more positions, which is exactly where this risk shows up. If someone has two different jobs at the same company with the same start date, the system could merge them when the second job appears in a later snapshot. If both jobs appear together in the first observation, they can remain separate because they are created as separate positions. This is a known limitation of using company and start date without requiring title agreement.
+Allowing different titles introduces some risk. 20.9 percent of jobs sit at a company where the same person holds 2 or more positions, which is exactly where this risk shows up. If someone has two different jobs at the same company with the same start date, the system could merge them when the second job appears in a later snapshot. If both jobs appear together in the first observation, they can remain separate because they are created as separate positions. This is a limitation of matching on company and start date without requiring the title to match.
 
-In the 20 examples I read, about half looked like real edits (Production Manager to Chief Operating Officer, Licensing Manager to People Compliance Manager, COO to Owner & COO) . A few looked doubtful (Graphic Design Internship becoming Operations Manager, and Designer grafico becoming Assistente de marketing). 
-
-### Edited titles
-
-Titles can change because of promotions, corrections, or changes in how someone describes their work. I therefore allow some tiers to match positions with different titles when other evidence is strong enough.
-
-The trade-off is that a title change and a genuinely different role can look similar in the available data.
+In the 20 examples I read, about half looked like real edits (Production Manager to Chief Operating Officer, Licensing Manager to People Compliance Manager, COO to Owner & COO) . A few looked doubtful (Graphic Design Internship becoming Operations Manager, and Designer grafico becoming Assistente de marketing).
 
 ### Missing start dates
 
@@ -88,22 +82,22 @@ A blank start date combined with an altered title or company can still cause the
 
 ### Rows with no company or title
 
-A title-only row is particularly difficult to match because many people can have the same title. I only allow it to attach to an existing position with no known company.
+Rows with only a title are difficult to match because many different positions can have the same title. I only match these rows to an existing position if that position also has no known company.
 
-Similarly, a company-only or URL-only row should not be attached when multiple positions could be candidates. It is only matched when there is exactly one possible existing position.
+For rows with only a company or URL, I only match when there is exactly one possible existing position. If multiple positions could match, I leave the row unmatched rather than guess.
 
-In these cases, creating a new position is safer than guessing and potentially combining two different jobs.
+I would rather create a new ID than attach the row to the wrong job.
 
 ### The two assignment examples
 
-For Case A, the system carries an existing position forward into later snapshots, even when it is not present in the latest observation. This preserves the user's previously observed work history instead of treating an absent row as proof that the position disappeared.
+For Case A, When a position appears in an earlier snapshot but is missing from a later one, the system carries it forward. Just because it wasn't not in the latest snapshot, it doesn't automatically mean the person left that job.
 
-For Case B, the company LinkedIn URL and start date allow the system to identify the same position when the company name or title changes. For example, an edit from "RL" to "MLE" can still match through the URL-and-start-date tier when those fields remain the same. 
-Once two observations are matched to be the same, I apply a simple precedence rule in teh apply_row function in teh src/match.py. The newest position's values always win, unless they are empty. We can see an example of Case B in the assignment.
+For Case B, When a company name or title changes, the system can still identify the position using other fields. For example, if the company LinkedIn URL and start date stay the same, the URL and start date matching tier can recognize the same position even if the company name changes from "Revelio Labs" to "RL".
+Once two observations are matched to the same position, the apply_row function in src/match.py updates its values using the following rules.
 
-- When both sides have a value and they are different, the newest value wins. Example: RL wins Revelio Labs
-- When the new observation has a blank, the old value stays. Example: The old description "Making workforce data more accurate" stays
-- When the observation has no value for a field but the new observation has, It fills the empty field.
+- If both observations have different values, the newer value wins. Example: Revelio Labs is replaced with RL
+- If the new observation has a blank, the old value stays. Example: The old description "Making workforce data more accurate" stays
+- If the observation has a blank value and the new observation provides one, the new value fills the gap.
 
 ## 4. Cleaning bad data
 
@@ -117,27 +111,29 @@ The cleaning rules include:
 - End dates more than five years after the observation snapshot.
 - Rows with no useful information.
 
-I also repair garbled text where possible.
+I also fix garbled text where possible.
 
-A snapshot is only considered corrupted and dropped when no valid rows survive cleaning. If some rows are invalid but others are valid, the valid rows are still processed.
+An invalid row doesn't mean the whole snapshot gets dropped. If other valid rows remain, I keep and process them. I only drop the entire snapshot when no valid rows are left.
 
-The original input data is not modified. Cleaning happens in the processing pipeline, and optional logs can record which rows were removed and why. This makes it possible to inspect discarded records without changing the source data.
+In one run, 2,474 out of 3,941,416 snapshots were dropped. All 2,474 were recorded in the dropped log.
 
-2,474 of 3,941,416 snapshots were dropped, and all of them appear in the dropped log.
+The original input files remain unchanged. Cleaning happens during processing, and optional logs record which rows were removed and why.
 
-The `_state` and `_logs` folders are stored next to the output. They contain processing state and logs; they are not part of the position output, and readers ignore them.
+The pipeline also creates `_state` and `_logs` folders next to the output. `_state` contains the saved position data needed for later updates, while `_logs` contains processing logs. Neither folder is part of the final position output.
 
 ## 5. Speed and scaling
 
-I partition the data into buckets based on the user. All observations belonging to the same user go into the same bucket.
+I split the data into buckets based on the `user_id`. All observations belonging to the same user go into the same bucket.
 
-We need to keep a user's history together because matching relies on their past data. If we split it across workers, we would need to constantly synchronize that user's state. Keeping users in the same bucket allows different buckets to be processed in parallel.
+This matters because matching depends on a user's previous observations. If their history were split across different workers, those workers would need access to the same user's matching state. Keeping each user's data in one bucket avoids that problem.
 
-The pipeline processes buckets in parallel, with a maximum of four workers. Each bucket maintains its own state, so workers can process different users independently.
+The pipeline processes buckets in parallel, using a maximum of four workers. Each worker processes a separate bucket and maintains the state for the users in that bucket.
 
-The processing cost is expected to grow approximately linearly with the number of rows under a similar workload. However, the current implementation is limited by bucket size, available memory, and the resources of the machine. A large bucket or unusually large user can put pressure on a single worker, especially on a 16 GB machine.
+In my latest local run, processing 11.48 million input rows took 126.2 seconds. The two Docker runs took 127.5 and 127.8 seconds. I haven't tested enough different dataset sizes to establish how processing time grows as the input increases.
 
-In order to scale further, there would need to be changes in the design. The 100-billion-row estimate is a rough extrapolation, not a measured benchmark.
+The current implementation also has limitations. Large buckets can require more memory and take longer to process, leaving other workers waiting for them to finish. The number of workers is also limited by the available machine resources.
+
+In order to scale further, changes to how data and state are distributed and processed are required.
 
 ## 6. Daily updates
 
@@ -145,26 +141,26 @@ The pipeline supports incremental processing for daily updates. The history from
 
 When new snapshots arrive:
 
-- The pipeline identifies which buckets are affected.
+- New input is split into buckets, and only buckets with input files are processed.
 - Only those buckets need to be processed and rewritten.
 - Snapshots older than the latest processed snapshot are skipped and logged because processing them would violate the chronological order.
-- Re-running the same input does not create new positions or repeat completed work.
+- Previously assigned position IDs are retained through the saved state, so existing positions can continue across runs.
 
-This makes daily updates cheaper than processing the entire dataset again.
+This avoids rebuilding the full history for every update. But the pipeline still processes the full contents of each affected bucket instead of just updating only the users who have new snapshots.
 
 ## 7. How I checked the results
 
-I used different checks to evaluate the implementation.
+I checked the runtime, output, and matching results.
 
 ### Runtime and memory
 
-In the latest run with logs enabled, the pipeline processed approximately 11.48 million input rows in 127.2 seconds. The split processing took 21.0 seconds. Peak worker memory was 875 MB.
+In the latest run with logs enabled, the pipeline processed approximately 11.48 million input rows in 127.2 seconds. Splitting the input into buckets took 21.0 seconds, and peak worker memory was 875 MB.
 
 The latest local run without logs took 126.2 seconds. The Docker runs took 127.5 seconds and 127.8 seconds.
 
-The split run's initial pass had previously reached 2,125 MB. I have not investigated the cause of that higher memory usage, so I would not treat the lower memory figure as a guaranteed maximum.
+An earlier run reached 2,125 MB during the initial split. I haven't investigated why memory usage was higher in that run, so 875 MB can't be treated as a guaranteed maximum.
 
-The daily update took approximately 11.6 seconds, compared with 130.7 seconds for the initial processing run used in that comparison.
+For the daily update comparison, processing took approximately 11.6 seconds, compared with 130.7 seconds for the initial run.
 
 ### Output and consistency across runs
 
@@ -174,15 +170,13 @@ The final output contained:
 - 468,966 positions.
 - Zero duplicate `(position_id, asof_ts)` keys.
 
-I compared the checksums from the full run, the initial run followed by split processing, and the Docker runs. They matched.
+I used a checksum script to compare the outputs from the full run, split processing, and Docker runs. It calculated a hash for each output row and added the hashes into one value. All three produced the same row count and checksum (`17054104815118782646`).
 
-The checksum was `17054104815118782646`.
+This shows that the results were consistent across runs but it does not prove that every position was matched correctly.
 
-The matching checksum between the full and split runs also supports the chronological processing approach: splitting the work did not change the final output in these tests. These checks provide evidence of consistency, not proof that every position was matched correctly.
+### Remaining duplicate candidates
 
-### Duplicate-pair investigation
-
-The latest duplicate-pair analysis reported 1,798 possible duplicate pairs. These are candidates identified by the analysis, not 1,798 confirmed errors or a total count of all duplicates.
+I ran the latest duplicate-pair analysis and it returned 1,798 possible duplicates. These were just potential matches to review, not confirmed errors.
 
 The breakdown was:
 
@@ -195,17 +189,17 @@ The breakdown was:
 - 60: start edit within 12 months, but the old position was not seen in the previous snapshot.
 - 49: start edit within 12 months, same company, and similar title.
 
-This analysis helps explain why the remaining pairs were not automatically merged. Some lack enough shared evidence, while others could represent genuinely different jobs.
+These cases explain why the existing rules did not merge the pairs. Some lack enough shared evidence, and the others maybe different jobs.
 
 ### Company-name suffix investigation and fix
 
-I also investigated company-name variations involving legal suffixes such as "Ltd", "Limited", "Inc", "Corp", and "LLC".
+I also investigated company names involving legal suffixes such as Ltd, Limited, Inc, Corp, and LLC.
 
 The investigation found 1,965 candidate groups. I reviewed a random sample of 40 groups, and all 40 looked like the same job based on the information available. This was my judgment from the sample, not independent ground truth.
 
-I then added legal-suffix removal to the company key so that names such as "Company Ltd" and "Company Limited" can be treated as the same company for matching.
+I added legal-suffix removal to the company key so that names such as "Company Ltd" and "Company Limited" can be treated as the same company for matching.
 
-After the fix, the candidate groups went from 1,965 to zero, and the output contained 2,138 fewer positions. This shows the effect of the normalization change. It does not prove that every removed position was a confirmed duplicate.
+After the change, the candidate groups dropped from 1,965 to zero, and the output contained 2,138 fewer positions. I didn't manually verify every affected position, so I am not sure if all of those reductions were correct.
 
 Some company-name differences can still remain, including abbreviations such as "BofA", spelling differences, translations, and differences between subsidiaries and parent companies.
 
@@ -216,17 +210,15 @@ The latest title-edit analysis found:
 - Company + start: 90,322 matched rows. Of these, 30 had the same title after cleaning, 23,594 had similar titles, and 24,613 had different titles, and 42,085 had no title change at all.
 - URL + start: 10,846 matched rows. Of these, 236 had the same title after cleaning, 278 had similar titles, and 504 had different titles, and 9,828 had no title change at all.
 
-Together, the two tiers matched 25,117 rows with different titles, approximately 0.22% of the 11.48 million input rows.
-
-This shows how many rows were matched despite having different titles. It is not a measured false-match rate. Some differences are legitimate title edits, while others could represent different roles.
+Together, these tiers matched 25,117 rows with different titles, approximately 0.22% of the 11.48 million input rows. Some differences may be legitimate title edits, but others could be incorrect merges. I don't have labels to determine how many belong to each group.
 
 ### Rules versus a score
 
-I also experimented with a separate scoring approach. It was precise on the cases where it found a candidate, but its coverage was low. The experiment did not test the false-merge rate for genuinely new positions, so it could not establish how safely the score distinguishes different jobs.
+I experimented with a separate scoring approach. It was precise on the cases where it found a candidate, but its coverage was low. I also hadn't tested its false-merge rate on genuinely new positions.
 
-I chose the ordered rules for the main matcher because they are easier to understand and explain: each tier has specific evidence requirements, and the stronger evidence is checked first.
+I kept the ordered rules for the main matcher because each tier has specific evidence requirements, and the matching process is easier to follow.
 
-I did not compare the rule-based matcher and the scoring approach on a labeled set of real matching and non-matching pairs. Therefore, I cannot claim that one has better overall accuracy than the other.
+I haven't compared both approaches using a labeled set of matching and non-matching examples, so I can't say which would perform better overall.
 
 ### Synthetic test and manual review
 
@@ -234,26 +226,28 @@ On the synthetic test, the matcher achieved 0.9936 precision and 0.975 recall. T
 
 Most of the synthetic splits came from a blank start date combined with an altered title or company. There were also 30 merged IDs that I could not explain, so the test still has cases that need investigation.
 
-I also used a small manual review with assistance to inspect matching examples. The verdicts were prefilled by an AI assistant, so this was not an independent manual evaluation.
+I also manually reviewed a sample of matching examples across several users. The cases I found consistent with the limitations already described below, including the 12 month start edit window and the risk of a position becoming disconnected from its own later history.
 
 The dataset does not provide ground-truth labels for whether every pair of observations represents the same real-world job. Therefore, I cannot claim a measured overall precision or recall for the real dataset.
 
 ## 8. Limits and what I would do next
 
-There are several limitations in the current approach.
+The current matching rules work for the cases I tested, but there are still situations where the available information is not enough to identify a position confidently.
 
-- **Thresholds are judgment calls:** the 40-character description threshold, 0.7 title similarity threshold, and 12-month date window were selected as practical rules. They were not tuned against a labeled ground-truth dataset.
-- **Rehires can remain separate:** if someone leaves a company and returns with a different start date, the system normally treats the return as a separate position. This is intentional because the two periods may represent different jobs.
-- **Some company-name variations can remain:** legal suffixes are now handled, but abbreviations, spelling differences, translations, and subsidiaries can still prevent a match.
-- **Blank start dates can cause false splits:** when a start date is missing and the title or company also changes, the system may not have enough evidence to recognize the same job.
-- **Title abbreviations can cause false splits:** if the title is abbreviated and the company and URL also change, the available matching signals may not be strong enough.
-- **Two real roles can be merged:** company and start date can be insufficient when someone has multiple roles at the same company with the same start date.
-- **State files are Python-specific:** the current state uses Python serialization, which limits portability and makes it less suitable as a long-term distributed state format.
-- **Memory varies:** worker memory depends on the bucket and workload. The split run's initial pass reached 2,125 MB, and I have not investigated the cause.
-- **There is no ground-truth accuracy measurement:** the available checks do not prove the real-world precision or recall of the matcher.
-- **Acronym investigation:** I considered to make the matching logic to catch abbrevations like RL stands for Revelio Labs when company linkedin URL is not present. I tested this by scanning the full output that qualify for that case and I found 131 candidate pairs across 468,966 positions. The number of clean, useful cases is under 40 from almost half a million positions. I decided against adding this as a matching tier. 
+- The 40-character description threshold, 0.7 title similarity threshold, and 12-month date window were selected as practical starting points. I haven't tested different values against labeled data so I can't say these are the best thresholds.
+- If someone leaves a company and later returns, will usually create a separate position because the start date is different. I kept this logic because a return could be a truly new job, and I don't have enough evidence to assume it is the same one.
+- I added normalization for legal suffixes such as Ltd and Inc, but other differences like subsidiary names, abbrevations or spelling differences can still cause problems.
+- When a start date is missing and the title or company also changes, matching becomes difficult. The system may create a new position even when the observation refers to an existing job.
+- If the title is abbreviated and the company and URL also change, the available matching signals may not be strong enough.
+- Another risk is when someone holds two different roles at the same company with the same start date. Since some tiers rely on company and start date, teh system could combine those roles incorrectly.
+- The current state uses Python serialization. It works for the current implementation but it is harder to use across different languages and in a distributed environmnet which leads to considering more portable storage format.
+- Memory usage also needs more investigation. Most recent runs used around 875 MB of peak worker memory, but an earlier split run reached 2,125 MB during its initial pass. I haven't identified why it was higher in that run.
+- I don't have labeled real-world data showing which observations belong to the same job. So I just reported runtime, consistency checks, manual checks and synthetic tests.
+- I also considered adding acronym matching for cases where the company LinkedIn URL is missing, such as matching "RL" to "Revelio Labs". I tested this by scanning the full output that qualify for that case and I found 131 candidate pairs across 468,966 positions. The number of clean, useful cases is under 40 from almost half a million positions. I decided not to add this as a matching tier because it could lead to incorrect merges alone.
 
-My next improvements would be to create a labeled evaluation set, inspect ambiguous matches more systematically, and investigate the unexplained synthetic merged IDs and memory spike. I would also consider using a scoring model to help rank candidates when several positions are plausible. I would not replace the current rules with a score until it had been evaluated against labeled examples.
+My next step would be to build a labeled dataset of matching and non-matching examples from real observations. This would let me measure precision and recall, test different thresholds, and compare the current tier-based approach with the scoring approach I experimented with. I would also review the ambiguous matches to see whether additional evidence could resolve some of them without increasing false merges.
+
+Beyond matching accuracy, I would investigate the 30 unexplained merged IDs in the synthetic test and the memory spike from the earlier split run. For larger datasets, I would also look at reducing the amount of state each worker needs to load and exploring a more scalable way to store and access position state than Python serialization.
 
 The analysis scripts used for these investigations are not included in the submitted zip.
 
@@ -261,16 +255,16 @@ The analysis scripts used for these investigations are not included in the submi
 
 The current implementation would need architectural changes before it could handle 100 billion rows.
 
-Using the latest local run without logs, 11.48 million rows took 126.2 seconds, or approximately 91,000 rows per second. If that rate stayed constant, processing 100 billion rows would take roughly 13 days on one machine. With 100 machines and perfectly linear scaling, it would take approximately three hours.
+Using the latest local run without logs, 11.48 million rows took 126.2 seconds, or approximately 91,000 rows per second. If that rate stayed constant, processing 100 billion rows would take approximately 13 days on one machine. With 100 machines and perfectly linear scaling, it would take approximately three hours.
 
-These are rough extrapolations. They assume the same processing rate and linear scaling, and ignore data skew, I/O, communication between machines, and other overhead. Actual processing time would likely be higher.
+These are rough guesses. They assume the same processing rate and linear scaling, communication between machines, and other overhead. Actual processing time would likely be higher.
 
-First, I would replace the Python-specific state files with a more scalable storage format, such as Parquet for batch-oriented data or a key-value store for state that needs frequent lookups and updates.
+First, I would replace Python serialization for storing position state. It works for the current implementation, but loading and rewriting large state files would become expensive at this scale. I would investigate a key-value store for looking up and updating individual users' position state, while using Parquet for storing larger batches of historical data.
 
-Second, I would use multi-stage partitioning. Partitioning by user is necessary to keep a user's history together, but at this scale I would also need a strategy for distributing large partitions and handling skewed users.
+Second, I would keep partitioning by user so that all observations for one user are processed together. I would also improve workload balancing so that large partitions do not leave some workers with significantly more work than others.
 
-Third, I would move processing to a distributed environment with many machines rather than relying on four local workers.
+Third, I would move from multiprocessing on one machine to distributed processing across multiple machines. Each machine could process different partitions, allowing the workload to be spread across a larger cluster.
 
 I would also introduce state compaction, more robust recovery, and coordination for concurrent updates.
 
-The current system demonstrates chronological matching, stable IDs, parallel bucket processing, and incremental updates. Those are useful foundations, but they do not mean the existing implementation can directly scale to 100 billion rows.
+The current system demonstrates chronological matching, stable IDs, parallel bucket processing, and incremental updates. However, the current implementation would need significant changes before it could handle 100 billion rows.
