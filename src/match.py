@@ -7,6 +7,7 @@ import pandas as pd
 from src.keys import (
     company_key,
     description_key,
+    is_placeholder,
     repair_text,
     text_key,
     titles_similar,
@@ -126,7 +127,7 @@ class UserIndex:
 
 def is_blank(value):
     if isinstance(value, str):
-        return value.strip() == ""
+        return value.strip() == "" or is_placeholder(value)
     if value is None or value is pd.NaT:
         return True
     if isinstance(value, float):
@@ -202,6 +203,10 @@ def by_description_missing_start(row, position):
     return one_missing and row["desc_key"] in position.descs and shares
 
 
+def ended_before(end, start):
+    return not is_blank(end) and pd.Timestamp(end) < start
+
+
 def by_description_start_edit(row, position):
     both = row["start"] is not None and position.start is not None
     return (
@@ -209,8 +214,8 @@ def by_description_start_edit(row, position):
         and row["start"] != position.start
         and months_apart(row["start"], position.start) <= MAX_START_EDIT_MONTHS
         and (row["company_key"], row["title_key"]) in position.pairs
-        and row["desc_key"] in position.descs
         and position.last_seen == row["step"] - 1
+        and not ended_before(position.values["enddate"], row["start"])
     )
 
 
@@ -284,7 +289,7 @@ TIERS = [
     ),
     (
         "start edited + same description",
-        near_description,
+        near_pair,
         by_description_start_edit,
         False,
     ),

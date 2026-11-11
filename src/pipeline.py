@@ -25,6 +25,8 @@ BATCH_ROWS = 500_000
 STATE_DIR = '_state'
 META_FILE = 'meta.json'
 GOLDEN_RATIO = np.uint64(0x9E3779B97F4A7C15)
+EXPECTED_TYPES = {'observed_ts': pa.date32(), 'startdate': pa.date32(), 'enddate': pa.date32(),
+                  'user_id': pa.int64(), 'order_in_profile': pa.int32()}
 
 
 def bucket_ids(user_ids, bits):
@@ -39,6 +41,10 @@ def count_bits(total_rows, target_rows):
 
 def split_into_buckets(files, scratch, bits):
     schema = pq.ParquetFile(files[0]).schema_arrow
+    schema = pa.schema([
+        pa.field(f.name, EXPECTED_TYPES.get(f.name, pa.string())) if pa.types.is_null(f.type) else f
+        for f in schema
+    ])
     writers = {}
     try:
         for file in files:

@@ -57,3 +57,17 @@ def test_logs_are_written_only_when_asked(tmp_path, monkeypatch):
     monkeypatch.setenv('WRITE_LOGS', '1')
     main()
     assert list((output_dir / '_logs').glob('match_log_*.parquet'))
+
+def test_all_null_column_in_first_file_does_not_crash(tmp_path, monkeypatch):
+    df, input_dir = make_input(tmp_path)
+    for old in input_dir.glob('*.parquet'):
+        old.unlink()
+    df.iloc[:5].assign(enddate=None).to_parquet(input_dir / 'a_first.parquet', index=False)
+    df.iloc[5:].to_parquet(input_dir / 'b_rest.parquet', index=False)
+    output_dir = tmp_path / 'output'
+    monkeypatch.setenv('INPUT_DIR', str(input_dir))
+    monkeypatch.setenv('OUTPUT_DIR', str(output_dir))
+    monkeypatch.setenv('WORKERS', '1')
+    main()
+    result = pd.concat([pq.read_table(p).to_pandas() for p in output_dir.glob('part_*.parquet')])
+    assert result['enddate'].notna().any()

@@ -405,3 +405,62 @@ def test_same_company_and_title_with_two_different_start_dates_stay_separate_des
     ]
     out, _, _ = run(rows)
     assert out['position_id'].nunique() == 2
+
+
+def test_future_start_does_not_poison_a_dateless_position():
+    rows = [
+        [d('2026-01-01'), 1, 'Acme', None, 'Engineer', None, None, None, None, 0],
+        [d('2026-01-01'), 1, 'Other', None, 'Analyst', None, None, d('2015-01-01'), d('2016-01-01'), 1],
+        [d('2026-02-01'), 1, 'Acme', None, 'Engineer', None, None, d('2099-01-01'), None, 0],
+        [d('2026-02-01'), 1, 'Other', None, 'Analyst', None, None, d('2015-01-01'), d('2016-01-01'), 1],
+        [d('2026-03-01'), 1, 'Acme', None, 'Engineer', None, None, d('2020-01-01'), None, 0],
+    ]
+    out, _, _ = run(rows)
+    acme = out[out['company_raw'] == 'Acme']
+    assert acme['position_id'].nunique() == 1
+    assert d('2099-01-01') not in set(acme['startdate'])
+
+
+
+def test_repair_text_fixes_mixed_garbling_and_leaves_good_text():
+    from src.keys import repair_text
+    assert repair_text('å°šå®\x8f(ä¸Šæµ·)') == '尚宏(上海)'
+    assert repair_text('Ø¯Ø§Ø¯Ù‡') == 'داده'
+    assert repair_text('SÃ£o Paulo') == 'São Paulo'
+    for good in ['腾讯科技', 'مهندس', 'Инженер', 'São Paulo', 'Ingénieur', 'Acme']:
+        assert repair_text(good) == good
+
+
+
+def test_placeholder_does_not_overwrite_real_value():
+    rows = [
+        [d('2026-01-01'), 1, 'Freelance', None, 'Graphic Designer', None, None, d('2020-01-01'), None, 0],
+        [d('2026-02-01'), 1, 'undefined', None, 'Graphic Designer', None, None, d('2020-01-01'), None, 0],
+        [d('2026-03-01'), 1, 'N/A', None, 'Graphic Designer', None, None, d('2020-01-01'), None, 0],
+    ]
+    out, _, _ = run(rows)
+    assert out['position_id'].nunique() == 1
+    assert set(out['company_raw']) == {'Freelance'}
+
+
+def test_real_values_that_look_short_are_kept():
+    from src.keys import is_placeholder
+    for real in ['IBM', 'EY', 'Self', 'Confidential', 'No', 'X', '经理', 'CEO', 'Nan Fang']:
+        assert not is_placeholder(real)
+    for fake in ['N/A', 'n.a.', 'null', 'None', 'UNKNOWN', 'undefined', '-', '...', '  ',
+                 '"£$%^&()*:><', '______________', '*' * 40, '???? ????? ?????? ???????? ???????']:
+        assert is_placeholder(fake)
+
+def test_start_date_correction_keeps_the_same_id():
+    edit = [
+        [d('2026-01-01'), 1, 'Acme', None, 'Intern', None, None, d('2022-01-01'), None, 0],
+        [d('2026-02-01'), 1, 'Acme', None, 'Intern', None, None, d('2022-10-01'), None, 0],
+    ]
+    out, _, _ = run(edit)
+    assert out['position_id'].nunique() == 1
+    new_stint = [
+        [d('2026-01-01'), 1, 'Acme', None, 'Intern', None, None, d('2022-01-01'), d('2022-06-01'), 0],
+        [d('2026-02-01'), 1, 'Acme', None, 'Intern', None, None, d('2022-10-01'), None, 0],
+    ]
+    out, _, _ = run(new_stint)
+    assert out['position_id'].nunique() == 2

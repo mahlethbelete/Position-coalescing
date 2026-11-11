@@ -59,7 +59,16 @@ Example: `docker run --rm -e WRITE_LOGS=1 -v ... -v ... position-coalescing`
 * `src/score.py`: an experimental similarity score. It is not used by `main.py`.
 * `tests/`: tests (`pip install pytest`, then `python -m pytest -q`).
 * `notebooks/explore_dataset.ipynb`: the data exploration that led to the design.
+* `tools/`: scripts that reproduce the numbers in `docs/EXPLANATION.md`. Run them from the project folder with `PYTHONPATH=.` set:
+  * `python tools/check_output.py OUTPUT INPUT`: row, position and snapshot counts, and the duplicate-key check
+  * `python tools/checksum_output.py OUTPUT`: output checksum
+  * `python tools/verify_dropped.py OUTPUT INPUT`: every missing snapshot is in the dropped log (needs `WRITE_LOGS=1`)
+  * `python tools/find_duplicates.py OUTPUT`: possible duplicate positions (needs `WRITE_LOGS=1`)
+  * `python tools/evaluate_accuracy.py INPUT`: synthetic precision and recall
+  * `python tools/check_future_dates.py INPUT`: future start and end dates
+  * `python tools/check_tier3_title_risk.py OUTPUT`: title changes in the URL + start tier
+  * `python tools/check_acronym_candidates.py OUTPUT`: acronym company candidates
 
 ## Result on the 10M row sample (4 CPUs, one machine)
 
-11,480,179 input rows became 13,086,335 output rows with 468,966 positions, in about 2 minutes (126 to 128 s) using about 0.9 GB per worker. The result is identical whether it is produced in one run or as an initial run followed by a daily update.
+11,480,179 input rows became 12,931,257 output rows with 462,712 positions, in about 2 minutes (126 to 128 s) using about 0.9 GB per worker. The result is identical whether it is produced in one run or as an initial run followed by a daily update.

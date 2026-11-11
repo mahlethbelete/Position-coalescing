@@ -2,6 +2,8 @@ import datetime as dt
 
 import pandas as pd
 
+from src.keys import is_placeholder
+
 from src.clean import clean
 
 COLUMNS = ['observed_ts', 'user_id', 'company_raw', 'company_website', 'title_raw',
@@ -79,3 +81,27 @@ def test_several_reasons_are_all_logged():
     ])
     _, dropped_rows, _ = clean(df)
     assert dropped_rows['reason'].iloc[0] == 'end before start; date before 1950'
+
+
+def test_start_after_snapshot_is_dropped():
+    df = make([
+        row(dt.date(2026, 9, 15), 1),
+        row(dt.date(2026, 9, 15), 1, title='Same month', start=dt.date(2026, 9, 1), order=1),
+        row(dt.date(2026, 9, 15), 1, title='Next month', start=dt.date(2026, 10, 1), order=2),
+        row(dt.date(2026, 9, 15), 1, title='Typo', start=dt.date(2099, 1, 1), order=3),
+    ])
+    good, dropped_rows, _ = clean(df)
+    assert list(good['title_raw']) == ['Engineer', 'Same month']
+    assert list(dropped_rows['reason']) == ['start after snapshot', 'start after snapshot']
+
+
+
+def test_placeholder_only_rows_are_dropped():
+    df = make([
+        row(dt.date(2026, 9, 1), 1),
+        [dt.date(2026, 9, 1), 1, 'N/A', None, 'null', None, None, None, None, 1],
+        [dt.date(2026, 9, 1), 1, 'None', None, '-', None, 'unknown', None, None, 2],
+    ])
+    good, dropped_rows, _ = clean(df)
+    assert list(good['title_raw']) == ['Engineer']
+    assert set(dropped_rows['reason']) == {'no useful field'}

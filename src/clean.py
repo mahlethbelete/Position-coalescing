@@ -1,5 +1,7 @@
 import pandas as pd
 
+from src.keys import is_placeholder
+
 TEXT_COLUMNS = ["company_raw", "title_raw", "location_raw", "description"]
 EARLIEST_DATE = pd.Timestamp("1950-01-01")
 MAX_END_AHEAD = pd.DateOffset(years=5)
@@ -18,7 +20,10 @@ def to_dates(series):
 
 def text_is_filled(series):
     text = series.astype("string").str.strip()
-    return (text.notna() & (text != "")).fillna(False).astype(bool)
+    filled = (text.notna() & (text != "")).fillna(False).astype(bool)
+    short = filled & (text.str.len() <= 30).fillna(False).astype(bool)
+    placeholders = {value for value in text[short].unique() if is_placeholder(value)}
+    return filled & ~text.isin(placeholders).fillna(False).astype(bool)
 
 
 def bad_row_flags(df):
@@ -37,6 +42,7 @@ def bad_row_flags(df):
             "end before start": start.notna() & end.notna() & (end < start),
             "date before 1950": (start < EARLIEST_DATE) | (end < EARLIEST_DATE),
             "end over 5 years after snapshot": end > observed + MAX_END_AHEAD,
+            "start after snapshot": start > observed,
             "no useful field": ~useful.any(axis=1),
         }
     )
